@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>Teradata AI Tools</title>
+  <style>
+    :root{
+      --td-blue:#002C5F; --td-blue-dark:#001C40; --td-blue-mid:#004080; --bg:#f6f8fb;
+      --text:#1f2937; --muted:#6b7280; --accent:#e5f0ff; --border:#e5e7eb;
+    }
+    *{box-sizing:border-box}
+    body {
+      margin: 0; font-family: Arial, sans-serif; display: flex; height: 100vh; overflow: hidden; background: var(--bg);
+      color: var(--text);
+    }
+    /* 左侧菜单 */
+    .sidebar {
+      width: 240px; background-color: var(--td-blue); color: #fff; display: flex; flex-direction: column;
+      border-right: 1px solid #001a38;
+    }
+    .logo {
+      display: flex; flex-direction: column; align-items: center; padding: 16px 12px; border-bottom: 1px solid var(--td-blue-mid);
+      background-color: var(--td-blue-dark);
+    }
+    .logo img { width: 150px; height: auto; margin-bottom: 10px; }
+    .site-title { font-size: 16px; font-weight: bold; color: #fff; text-align: center; }
+    .menu { flex: 1; padding: 10px; overflow-y:auto; }
+    .menu button {
+      display: block; width: 100%; padding: 10px 12px; margin: 6px 0; background: transparent; border: 0;
+      color: #fff; text-align: left; cursor: pointer; font-size: 14px; border-radius: 6px;
+    }
+    .menu button:hover { background-color: var(--td-blue-mid); }
+    .menu button.active { background:#0a3e85; }
+
+    /* 右侧内容 */
+    .content { flex: 1; padding: 20px 28px; overflow-y: auto; }
+    .card {
+      background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; box-shadow: 0 2px 8px rgba(0,0,0,.04);
+    }
+    h2 { margin: 0 0 8px; color: var(--td-blue); }
+    p.note { color: var(--muted); margin-top: 0; }
+
+    /* JSON Tree 样式 */
+    .toolbar { display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap; }
+    .toolbar input[type="file"]{ background:#fff; border:1px solid var(--border); padding:6px; border-radius:6px; }
+    .toolbar textarea { width: 100%; height: 120px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+    .toolbar .btn {
+      padding:8px 10px; border:1px solid var(--border); background:#fff; border-radius:8px; cursor:pointer;
+    }
+    .toolbar .btn:hover { background: var(--accent); }
+    .toolbar .field { padding:8px 10px; border:1px solid var(--border); border-radius:8px; min-width:220px; }
+    .tree { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.4; }
+    .tree ul { list-style: none; padding-left: 18px; margin: 0; }
+    .tree li { position: relative; margin: 2px 0; }
+    .tree .key { color:#1f2937; }
+    .tree .type { color:#6b7280; }
+    .tree .val-str { color:#047857; }
+    .tree .val-num { color:#b45309; }
+    .tree .val-bool { color:#0e7490; }
+    .tree .val-null { color:#6b7280; font-style: italic; }
+    .caret {
+      cursor: pointer; user-select: none; margin-right: 6px; color:#374151; display:inline-block; width:1em;
+    }
+    .caret::before { content: "▸"; display:inline-block; transition: transform .12s ease; }
+    .caret.open::before { transform: rotate(90deg); }
+    mark { background: #fff3a3; padding: 0 2px; border-radius: 3px; }
+
+    @media (max-width: 960px){
+      .sidebar{ width: 200px; }
+    }
+  </style>
+  <script>
+    // 工具切换
+    function setActive(btnId){
+      document.querySelectorAll('.menu button').forEach(b=>b.classList.remove('active'));
+      const b = document.getElementById(btnId);
+      if (b) b.classList.add('active');
+    }
+    function showTool(tool) {
+      const content = document.getElementById("content");
+      if (tool === "json2excel") {
+        setActive('btn-json2excel');
+        content.innerHTML = `
+          <div class="card">
+            <h2>JSON → Excel 変換</h2>
+            <p class="note">アップロードしたJSONファイルを、Excel（13列仕様）に変換します。</p>
+            <form action="/convert" method="post" enctype="multipart/form-data">
+              <input type="file" name="file" accept=".json,application/json" required>
+              <br><br>
+              <button class="btn" type="submit">変換してダウンロード</button>
+            </form>
+          </div>
+        `;
+      } else if (tool === "faq") {
+        setActive('btn-faq');
+        content.innerHTML = `
+          <div class="card">
+            <h2>FAQ 検索</h2>
+            <p class="note">企業内FAQを検索する機能（デモ）。</p>
+            <input class="field" type="text" placeholder="質問を入力してください" style="width:60%;" />
+            <button class="btn">検索</button>
+          </div>
+        `;
+      } else if (tool === "jsonviewer") {
+        setActive('btn-jsonviewer');
+        content.innerHTML = `
+          <div class="card">
+            <h2>JSON 可視化</h2>
+            <p class="note">JSON を階層ツリーで表示します。検索・展開/折り畳みが可能です。</p>
+
+            <div class="toolbar" style="margin-bottom:12px;">
+              <input id="fileInput" type="file" accept=".json,application/json" />
+              <input id="searchInput" class="field" type="text" placeholder="キー/値 検索 (Enter)"/>
+              <button class="btn" onclick="expandAll()">展開全部</button>
+              <button class="btn" onclick="collapseAll()">折り畳み全部</button>
+              <button class="btn" onclick="loadFromTextarea()">从文本加载</button>
+              <button class="btn" onclick="downloadJson()">下载当前JSON</button>
+            </div>
+
+            <div class="toolbar">
+              <textarea id="jsonTextarea" placeholder="贴入 JSON 文本（可选）"></textarea>
+            </div>
+
+            <div id="tree" class="tree" style="margin-top:10px;"></div>
+          </div>
+        `;
+        bindJsonViewer();
+      } else {
+        content.innerHTML = "<div class='card'><h2>ツールを選択してください。</h2><p class='note'>左のメニューからツールを選んでください。</p></div>";
+      }
+    }
+
+    // ===== JSON Viewer 逻辑 =====
+    let currentData = null;
+
+    function bindJsonViewer(){
+      const fileInput = document.getElementById('fileInput');
+      const searchInput = document.getElementById('searchInput');
+      fileInput?.addEventListener('change', async (e) => {
+        const f = e.target.files[0];
+        if (!f) return;
+        const txt = await f.text();
+        try {
+          currentData = JSON.parse(txt);
+          renderTree(currentData);
+        } catch(err){
+          alert('JSON 解析失败: ' + err.message);
+        }
+      });
+      searchInput?.addEventListener('keydown', (e)=>{
+        if (e.key === 'Enter') highlightSearch(e.target.value.trim());
+      });
+    }
+
+    function loadFromTextarea(){
+      const ta = document.getElementById('jsonTextarea');
+      if (!ta) return;
+      try{
+        currentData = JSON.parse(ta.value);
+        renderTree(currentData);
+      }catch(err){
+        alert('JSON 解析失败: ' + err.message);
+      }
+    }
+
+    function downloadJson(){
+      if(!currentData){ alert('还没有加载 JSON'); return; }
+      const blob = new Blob([JSON.stringify(currentData, null, 2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'data.json'; a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function renderTree(data){
+      const container = document.getElementById('tree');
+      if (!container) return;
+      container.innerHTML = buildNode('', data);
+      // 绑定折叠
+      container.querySelectorAll('.caret').forEach(c=>{
+        c.addEventListener('click', ()=> {
+          c.classList.toggle('open');
+          const ul = c.parentElement?.querySelector(':scope > ul');
+          if (ul) ul.style.display = (ul.style.display === 'none') ? 'block' : 'none';
+        });
+      });
+      // 默认展开第一层
+      container.querySelectorAll('.caret').forEach((c,i)=>{
+        if (i===0) { c.classList.add('open'); const ul=c.parentElement?.querySelector(':scope > ul'); if(ul) ul.style.display='block'; }
+      });
+    }
+
+    function buildNode(key, value){
+      const t = typeof value;
+      if (value === null) {
+        return `<li><span class="key">"${esc(key)}"</span>: <span class="val-null">null</span></li>`;
+      }
+      if (Array.isArray(value)){
+        const items = value.map((v,i)=> buildNode(String(i), v)).join('');
+        return `
+          <li>
+            <span class="caret"></span><span class="key">"${esc(key)}"</span> <span class="type">[array] (${value.length})</span>
+            <ul style="display:none">${items}</ul>
+          </li>`;
+      }
+      if (t === 'object'){
+        const entries = Object.entries(value);
+        const items = entries.map(([k,v])=> buildNode(k, v)).join('');
+        return `
+          <li>
+            <span class="caret"></span><span class="key">"${esc(key)}"</span> <span class="type">{object} (${entries.length})</span>
+            <ul style="display:none">${items}</ul>
+          </li>`;
+      }
+      if (t === 'string')  return `<li><span class="key">"${esc(key)}"</span>: <span class="val-str">"${esc(value)}"</span></li>`;
+      if (t === 'number')  return `<li><span class="key">"${esc(key)}"</span>: <span class="val-num">${value}</span></li>`;
+      if (t === 'boolean') return `<li><span class="key">"${esc(key)}"</span>: <span class="val-bool">${value}</span></li>`;
+      return `<li><span class="key">"${esc(key)}"</span>: <span>${esc(String(value))}</span></li>`;
+    }
+
+    function esc(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+    function expandAll(){
+      document.querySelectorAll('.caret').forEach(c=>{
+        c.classList.add('open');
+        const ul = c.parentElement?.querySelector(':scope > ul');
+        if (ul) ul.style.display = 'block';
+      });
+    }
+    function collapseAll(){
+      document.querySelectorAll('.caret').forEach(c=>{
+        c.classList.remove('open');
+        const ul = c.parentElement?.querySelector(':scope > ul');
+        if (ul) ul.style.display = 'none';
+      });
+    }
+
+    function highlightSearch(q){
+      // 清理旧高亮
+      document.querySelectorAll('mark').forEach(m=>{
+        const t = document.createTextNode(m.textContent);
+        m.parentNode.replaceChild(t, m);
+      });
+      if (!q) return;
+
+      const walker = document.createTreeWalker(document.getElementById('tree'), NodeFilter.SHOW_TEXT, null);
+      const textNodes = [];
+      while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+      textNodes.forEach(node=>{
+        const txt = node.nodeValue;
+        if (!txt) return;
+        const idx = txt.toLowerCase().indexOf(q.toLowerCase());
+        if (idx >= 0){
+          const before = txt.slice(0, idx);
+          const match  = txt.slice(idx, idx+q.length);
+          const after  = txt.slice(idx+q.length);
+          const frag = document.createDocumentFragment();
+          if (before) frag.appendChild(document.createTextNode(before));
+          const mark = document.createElement('mark'); mark.textContent = match; frag.appendChild(mark);
+          if (after) frag.appendChild(document.createTextNode(after));
+          node.parentNode.replaceChild(frag, node);
+        }
+      });
+    }
+
+    // 初始默认展示
+    window.addEventListener('DOMContentLoaded', ()=> {
+      showTool('json2excel');
+    });
+  </script>
+</head>
+<body>
+  <!-- 左侧菜单 -->
+  <div class="sidebar">
+    <div class="logo">
+      <img src="/static/new-teradata-logo.svg" alt="Teradata Logo" />
+      <div class="site-title">Teradata AI Tools</div>
+    </div>
+    <div class="menu">
+      <button id="btn-json2excel" onclick="showTool('json2excel')">JSON→Excel変換</button>
+      <button id="btn-jsonviewer" onclick="showTool('jsonviewer')">JSON 可視化</button>
+      <button id="btn-faq" onclick="showTool('faq')">FAQ検索</button>
+    </div>
+  </div>
+
+  <!-- 右侧内容区 -->
+  <div class="content" id="content"></div>
+</body>
+</html>
