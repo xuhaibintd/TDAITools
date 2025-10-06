@@ -1,4 +1,6 @@
 python -m venv venv
-source venv/Scripts/activate
+Windows: source venv/Scripts/activate
+Linux: source venv/bin/activate
+
 
 uvicorn main:app --reload
